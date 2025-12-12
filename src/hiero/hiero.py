@@ -17,7 +17,14 @@ from hiero.reranking import LLMReranker, RerankRequest, RerankerConfig
 from hiero.retrieval import HybridRetriever, RetrievalConfig, RetrievalQuery, RetrievalResult
 from hiero.storage import ChunkORM, DocumentORM, PgVectorStore
 from hiero.agent import AgentQuery, AgentResponse, OpenAIChatModel, ReActAgent
-from hiero.agent.tools import CalculateTool, RetrieveTool
+from hiero.agent import AgentConfig
+from hiero.agent.tools import (
+    CalculateTool,
+    FinishTool,
+    RetrieveMoreTool,
+    RetrieveTool,
+    SummarizeTool,
+)
 
 
 class QueryResponse(BaseModel):
@@ -74,7 +81,10 @@ class Hiero:
             ),
             tools=[
                 RetrieveTool(self.retriever, namespace=self.namespace),
+                RetrieveMoreTool(self.retriever, namespace=self.namespace),
                 CalculateTool(),
+                SummarizeTool(),
+                FinishTool(self.generator),
             ],
         )
 
@@ -244,7 +254,16 @@ class Hiero:
             generation=generation,
         )
 
-    async def agent_query(self, question: str, namespace: str | None = None) -> AgentResponse:
+    async def agent_query(
+        self,
+        question: str,
+        namespace: str | None = None,
+        config: AgentConfig | None = None,
+    ) -> AgentResponse:
         await self.initialize()
-        q = AgentQuery(question=question, namespace=namespace or self.namespace)
+        q = AgentQuery(
+            question=question,
+            namespace=namespace or self.namespace,
+            config=config or AgentConfig(),
+        )
         return await self.agent.run(q)
