@@ -22,7 +22,7 @@ class FusionMethod(str, Enum):
 
 
 class RetrievalConfig(BaseModel):
-    strategy: RetrievalStrategy = RetrievalStrategy.DENSE
+    strategy: RetrievalStrategy = RetrievalStrategy.HYBRID
     top_k: int = 10
     dense_weight: float = 0.7
     fusion_method: FusionMethod = FusionMethod.RRF
@@ -33,6 +33,8 @@ class RetrievalConfig(BaseModel):
     score_threshold: float | None = None
     metadata_filter: dict | None = None
     document_ids: list[UUID] | None = None
+    rerank_results: bool = False
+    rerank_candidates: int = 20
 
 
 class RetrievalQuery(BaseModel):
@@ -83,4 +85,3 @@ class _Timer:
 
     def ms(self) -> float:
         return (perf_counter() - self._start) * 1000
-

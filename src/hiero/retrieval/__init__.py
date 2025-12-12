@@ -8,6 +8,7 @@ from .base import (
     RetrieverProtocol,
 )
 from .dense import DenseRetriever
+from .hybrid import HybridRetriever
 
 __all__ = [
     "FusionMethod",
@@ -18,5 +19,5 @@ __all__ = [
     "RetrievalStrategy",
     "RetrieverProtocol",
     "DenseRetriever",
+    "HybridRetriever",
 ]
-
