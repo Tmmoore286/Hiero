@@ -8,6 +8,8 @@ from .base import (
 )
 from .semantic import SemanticChunker
 from .tokenizer import Tokenizer
+from .fixed import FixedChunker
+from .adaptive import AdaptiveChunker
 
 __all__ = [
     "Chunk",
@@ -18,5 +20,6 @@ __all__ = [
     "ChunkingResult",
     "Tokenizer",
     "SemanticChunker",
+    "FixedChunker",
+    "AdaptiveChunker",
 ]
-

@@ -38,7 +38,7 @@ class Chunk(BaseModel):
 
 
 class ChunkingConfig(BaseModel):
-    strategy: ChunkStrategy = ChunkStrategy.SEMANTIC
+    strategy: ChunkStrategy = ChunkStrategy.ADAPTIVE
     target_chunk_size: int = 512
     chunk_overlap: int = 64
     min_chunk_size: int = 100
@@ -83,4 +83,3 @@ def _finish_result(
         avg_chunk_size=sum(token_counts) / max(len(token_counts), 1),
         processing_time_ms=(perf_counter() - start_time) * 1000,
     )
-
