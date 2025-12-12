@@ -13,6 +13,7 @@ def test_settings_defaults():
     assert settings.database_url.startswith("postgresql+asyncpg://")
     assert settings.default_embedding_provider == "openai"
     assert settings.default_embedding_model == "text-embedding-3-small"
+    assert settings.enable_embedding_cache is True
     assert settings.default_llm_provider == "openai"
     assert settings.default_llm_model == "gpt-4o"
     assert settings.default_top_k == 10

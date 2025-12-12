@@ -103,3 +103,18 @@ class EmbedderProtocol(ABC):
     def model(self) -> EmbeddingModel:
         ...
 
+
+class EmbeddingCache(ABC):
+    @abstractmethod
+    async def get(self, text_hash: str, model_id: str) -> EmbeddingResult | None:
+        ...
+
+    @abstractmethod
+    async def set(self, result: EmbeddingResult) -> None:
+        ...
+
+    @abstractmethod
+    async def get_batch(
+        self, text_hashes: list[str], model_id: str
+    ) -> dict[str, EmbeddingResult]:
+        ...

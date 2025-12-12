@@ -14,3 +14,4 @@ def test_base_metadata_tables_present():
     assert "chunks" in table_names
     assert "namespaces" in table_names
     assert "vector_search_stats" in table_names
+    assert "embedding_cache" in table_names

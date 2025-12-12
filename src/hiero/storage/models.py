@@ -149,3 +149,34 @@ class VectorSearchStatORM(Base):
         server_default=sa.func.now(),
     )
 
+
+class EmbeddingCacheORM(Base):
+    __tablename__ = "embedding_cache"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    text_hash: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    model_id: Mapped[str] = mapped_column(sa.String(128), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(), nullable=False)
+    dimensions: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    last_accessed: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    access_count: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default=text("0")
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint("text_hash", "model_id", name="uq_embedding_cache_text_model"),
+    )

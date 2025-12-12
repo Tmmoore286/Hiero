@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from hashlib import sha256
 from time import perf_counter
 
 from openai import AsyncOpenAI
@@ -9,6 +10,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from .base import (
     BatchEmbeddingResult,
     EMBEDDING_MODELS,
+    EmbeddingCache,
     EmbeddingError,
     EmbeddingModel,
     EmbeddingResult,
@@ -22,11 +24,13 @@ class OpenAIEmbedder(EmbedderProtocol):
         api_key: str,
         model_name: str = "text-embedding-3-small",
         base_url: str | None = None,
+        cache: EmbeddingCache | None = None,
     ):
         if model_name not in EMBEDDING_MODELS:
             raise ValueError(f"Unknown embedding model: {model_name}")
         self._model: EmbeddingModel = EMBEDDING_MODELS[model_name]
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.cache = cache
 
     @property
     def model(self) -> EmbeddingModel:
@@ -40,12 +44,23 @@ class OpenAIEmbedder(EmbedderProtocol):
         self, texts: list[str], batch_size: int = 100, normalize: bool = True
     ) -> BatchEmbeddingResult:
         start_time = perf_counter()
-        results: list[EmbeddingResult] = []
         total_tokens = 0
         api_calls = 0
+        cache_hits = 0
 
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i : i + batch_size]
+        text_hashes = [sha256(t.encode("utf-8")).hexdigest() for t in texts]
+        cached: dict[str, EmbeddingResult] = {}
+        if self.cache:
+            cached = await self.cache.get_batch(text_hashes, self.model.model_id)
+            cache_hits = len(cached)
+
+        results_by_hash: dict[str, EmbeddingResult] = dict(cached)
+        missing_texts = [
+            (t, h) for t, h in zip(texts, text_hashes) if h not in cached
+        ]
+
+        for i in range(0, len(missing_texts), batch_size):
+            batch_texts = [t for t, _ in missing_texts[i : i + batch_size]]
             response = await self._embed_call(batch_texts)
             api_calls += 1
 
@@ -54,18 +69,22 @@ class OpenAIEmbedder(EmbedderProtocol):
                 vectors = [self._l2_normalize(v) for v in vectors]
 
             for text, vector in zip(batch_texts, vectors):
-                results.append(EmbeddingResult.from_text(text, vector, self.model))
+                result = EmbeddingResult.from_text(text, vector, self.model)
+                results_by_hash[result.text_hash] = result
+                if self.cache:
+                    await self.cache.set(result)
 
             usage = getattr(response, "usage", None)
             if usage and getattr(usage, "total_tokens", None):
                 total_tokens += int(usage.total_tokens)
 
+        ordered_results = [results_by_hash[h] for h in text_hashes]
         elapsed_ms = (perf_counter() - start_time) * 1000
         return BatchEmbeddingResult(
-            results=results,
+            results=ordered_results,
             total_tokens=total_tokens,
             processing_time_ms=elapsed_ms,
-            cache_hits=0,
+            cache_hits=cache_hits,
             api_calls=api_calls,
         )
 
@@ -79,4 +98,3 @@ class OpenAIEmbedder(EmbedderProtocol):
     def _l2_normalize(self, vector: list[float]) -> list[float]:
         norm = math.sqrt(sum(x * x for x in vector)) or 1.0
         return [x / norm for x in vector]
-

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     cohere_api_key: SecretStr | None = None
     default_embedding_provider: str = "openai"
     default_embedding_model: str = "text-embedding-3-small"
+    enable_embedding_cache: bool = True
 
     # LLM providers
     anthropic_api_key: SecretStr | None = None
@@ -36,4 +37,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
