@@ -49,6 +49,17 @@ class ReActAgent(AgentProtocol):
 
             if action.tool == ToolType.FINISH and obs.success:
                 result = obs.result or {}
+                confidence = float(result.get("confidence", 0.8))
+                self_eval = None
+                if query.config.enable_self_evaluation:
+                    confidence, self_eval_tokens, self_eval = await self._self_evaluate(
+                        query=query.question,
+                        answer=str(result.get("answer", "")),
+                        citations=result.get("citations", []) or [],
+                        retrieved=scratch.get("retrieved", []),
+                        temperature=query.config.temperature,
+                    )
+                    tokens_used += self_eval_tokens
                 return AgentResponse(
                     question=query.question,
                     answer=str(result.get("answer", "")),
@@ -56,7 +67,8 @@ class ReActAgent(AgentProtocol):
                     steps=steps,
                     total_steps=len(steps),
                     total_retrieval_calls=retrieval_calls,
-                    confidence=float(result.get("confidence", 0.8)),
+                    confidence=confidence,
+                    self_evaluation=self_eval,
                     total_latency_ms=(perf_counter() - start) * 1000,
                     llm_tokens_used=tokens_used,
                 )
@@ -161,6 +173,42 @@ class ReActAgent(AgentProtocol):
             action = AgentAction(tool=ToolType.FINISH, tool_input={}, thought="budget exhausted")
         return action, tokens
 
+    async def _self_evaluate(
+        self,
+        *,
+        query: str,
+        answer: str,
+        citations: list,
+        retrieved: list,
+        temperature: float,
+    ) -> tuple[float, int, str | None]:
+        system = (
+            "Evaluate the assistant answer for groundedness and relevance to the question. "
+            "Return ONLY JSON: {\"confidence\": <0-1>, \"critique\": \"...\"}."
+        )
+        user = {
+            "question": query,
+            "answer": answer,
+            "citations": citations,
+            "retrieved_chunks": retrieved[:10],
+        }
+        text, tokens = await self.llm.complete(
+            [
+                ChatMessage(role="system", content=system),
+                ChatMessage(role="user", content=json.dumps(user)),
+            ],
+            temperature=temperature,
+        )
+        data = _safe_parse_json(text) or {}
+        conf = data.get("confidence", 0.5)
+        try:
+            conf_f = float(conf)
+        except Exception:
+            conf_f = 0.5
+        conf_f = max(0.0, min(1.0, conf_f))
+        critique = data.get("critique")
+        return conf_f, int(tokens), str(critique) if critique is not None else None
+
 
 def _parse_action(text: str) -> AgentAction:
     try:
@@ -173,3 +221,13 @@ def _parse_action(text: str) -> AgentAction:
     except Exception:
         # Safe fallback: do a retrieval first.
         return AgentAction(tool=ToolType.RETRIEVE, tool_input={}, thought="fallback")
+
+
+def _safe_parse_json(text: str) -> dict[str, Any] | None:
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        return None
+    return None
