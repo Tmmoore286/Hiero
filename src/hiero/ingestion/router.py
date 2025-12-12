@@ -4,14 +4,20 @@ from pathlib import Path
 from typing import BinaryIO
 
 from .base import Document, DocumentMetadata, IngestorProtocol, UnsupportedFormatError
+from .docx import DOCXIngestor
 from .pdf import PDFIngestor
 from .text import TextIngestor
+from .url import URLIngestor
 
 
 def detect_file_type(path: str | Path) -> str:
+    if isinstance(path, str) and path.startswith(("http://", "https://")):
+        return "url"
     ext = Path(path).suffix.lower().lstrip(".")
     if ext == "pdf":
         return "pdf"
+    if ext == "docx":
+        return "docx"
     if ext in {"txt", "md", "markdown"}:
         return ext
     raise UnsupportedFormatError(f"Unsupported file extension: {ext or '<none>'}")
@@ -19,7 +25,7 @@ def detect_file_type(path: str | Path) -> str:
 
 class IngestionRouter:
     def __init__(self, ingestors: list[IngestorProtocol] | None = None):
-        self.ingestors = ingestors or [PDFIngestor(), TextIngestor()]
+        self.ingestors = ingestors or [PDFIngestor(), DOCXIngestor(), TextIngestor(), URLIngestor()]
 
     async def ingest_file(
         self,
@@ -32,12 +38,23 @@ class IngestionRouter:
                 return await ingestor.ingest(source, metadata)
         raise UnsupportedFormatError(f"No ingestor for type: {file_type}")
 
+    async def ingest_url(
+        self,
+        url: str,
+        metadata: DocumentMetadata | None = None,
+    ) -> Document:
+        for ingestor in self.ingestors:
+            if ingestor.supports("url"):
+                return await ingestor.ingest(url, metadata)
+        raise UnsupportedFormatError("No URL ingestor configured")
+
     async def ingest_path(
         self,
         path: str | Path,
         metadata: DocumentMetadata | None = None,
     ) -> Document:
         file_type = detect_file_type(path)
+        if file_type == "url":
+            return await self.ingest_url(str(path), metadata)
         with open(path, "rb") as f:
             return await self.ingest_file(f, file_type=file_type, metadata=metadata)
-

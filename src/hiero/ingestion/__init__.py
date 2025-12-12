@@ -8,6 +8,8 @@ from .base import (
 from .pdf import PDFIngestor
 from .router import IngestionRouter
 from .text import TextIngestor
+from .docx import DOCXIngestor
+from .url import URLIngestor
 
 __all__ = [
     "Document",
@@ -16,7 +18,8 @@ __all__ = [
     "IngestionError",
     "UnsupportedFormatError",
     "PDFIngestor",
+    "DOCXIngestor",
     "TextIngestor",
+    "URLIngestor",
     "IngestionRouter",
 ]
-

@@ -67,7 +67,7 @@ class IngestorProtocol(ABC):
     @abstractmethod
     async def ingest(
         self,
-        source: BinaryIO,
+        source: BinaryIO | str,
         metadata: DocumentMetadata | None = None,
     ) -> Document:
         ...
@@ -75,4 +75,3 @@ class IngestorProtocol(ABC):
     @abstractmethod
     def supports(self, file_type: str) -> bool:
         ...
-
