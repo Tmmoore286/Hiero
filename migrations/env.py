@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
+from pathlib import Path
 from logging.config import fileConfig
 from typing import Any
 
@@ -15,8 +17,19 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Models are wired in Phase 0.4. Until then, use raw SQL migrations.
-target_metadata = None
+# Ensure local src/ is on path so Alembic can import models.
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.append(str(SRC))
+
+try:
+    from hiero.storage.models import Base  # type: ignore
+
+    target_metadata = Base.metadata
+except Exception:
+    # Models may not be available in some environments.
+    target_metadata = None
 
 
 def get_url() -> str:
@@ -62,4 +75,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     asyncio.run(run_migrations_online())
-
