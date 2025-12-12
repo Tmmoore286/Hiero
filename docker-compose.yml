@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: hiero-db
+    environment:
+      POSTGRES_USER: hiero
+      POSTGRES_PASSWORD: hiero
+      POSTGRES_DB: hiero
+    ports:
+      - "5432:5432"
+    volumes:
+      - hiero_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hiero -d hiero"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  hiero_db_data:
