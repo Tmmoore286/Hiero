@@ -8,12 +8,13 @@ from uuid import UUID
 import sqlalchemy as sa
 from pydantic import BaseModel
 
-from hiero.chunking import ChunkingConfig, SemanticChunker, Tokenizer
+from hiero.chunking import AdaptiveChunker, ChunkingConfig, Tokenizer
 from hiero.config import Settings
 from hiero.embedding import EmbedderFactory
 from hiero.generation import GenerationConfig, GenerationRequest, GenerationResponse, GroundedGenerator, SourceContext
 from hiero.ingestion import DocumentMetadata, IngestionRouter
-from hiero.retrieval import DenseRetriever, RetrievalConfig, RetrievalQuery, RetrievalResult
+from hiero.reranking import LLMReranker, RerankRequest, RerankerConfig
+from hiero.retrieval import HybridRetriever, RetrievalConfig, RetrievalQuery, RetrievalResult
 from hiero.storage import ChunkORM, DocumentORM, PgVectorStore
 
 
@@ -51,13 +52,16 @@ class Hiero:
         self.vector_store = PgVectorStore(self.settings.database_url)
         self.embedder = EmbedderFactory(self.settings).create()
         self.tokenizer = Tokenizer()
-        self.chunker = SemanticChunker(self.tokenizer)
+        self.chunker = AdaptiveChunker(self.tokenizer)
         self.ingestor = IngestionRouter()
-        self.retriever = DenseRetriever(self.vector_store, self.embedder)
+        self.retriever = HybridRetriever(self.vector_store, self.embedder)
 
         if not self.settings.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required for generation")
         self.generator = GroundedGenerator(
+            api_key=self.settings.openai_api_key.get_secret_value()
+        )
+        self.reranker = LLMReranker(
             api_key=self.settings.openai_api_key.get_secret_value()
         )
 
@@ -73,6 +77,9 @@ class Hiero:
     async def close(self) -> None:
         if getattr(self, "vector_store", None):
             await self.vector_store.dispose()
+        cache = getattr(self.embedder, "cache", None)
+        if cache is not None and hasattr(cache, "dispose"):
+            await cache.dispose()
         self._initialized = False
 
     async def ingest(
@@ -80,6 +87,7 @@ class Hiero:
         source: str | Path | BinaryIO,
         metadata: dict | None = None,
         namespace: str | None = None,
+        file_type: str | None = None,
     ) -> UUID:
         await self.initialize()
         namespace = namespace or self.namespace
@@ -87,11 +95,12 @@ class Hiero:
 
         if isinstance(source, (str, Path)):
             source_str = str(source)
-            if source_str.startswith(("http://", "https://")):
-                raise NotImplementedError("URL ingestion will be added in Phase 2.")
             doc = await self.ingestor.ingest_path(source_str, meta)
         else:
-            raise NotImplementedError("BinaryIO ingestion not yet supported in MVP.")
+            ft = file_type or meta.file_type
+            if not ft:
+                raise ValueError("file_type is required when ingesting from a file object")
+            doc = await self.ingestor.ingest_file(source, ft, meta)
 
         # Idempotent ingest: return existing doc if already present.
         async with self.vector_store.db.session() as session:
@@ -171,10 +180,13 @@ class Hiero:
         generation_config: GenerationConfig | None = None,
     ) -> QueryResponse:
         await self.initialize()
+        effective_retrieval_config = retrieval_config or RetrievalConfig(
+            top_k=self.settings.default_top_k
+        )
         retrieval = await self.retrieve(
             question,
             namespace=namespace,
-            config=retrieval_config,
+            config=effective_retrieval_config,
         )
 
         context = [
@@ -195,10 +207,26 @@ class Hiero:
         )
         generation = await self.generator.generate(gen_request)
 
+        if effective_retrieval_config.rerank_results:
+            rerank_cfg = RerankerConfig(
+                top_k=self.settings.rerank_top_k,
+                candidates=effective_retrieval_config.rerank_candidates,
+            )
+            reranked = await self.reranker.rerank(
+                RerankRequest(query=question, chunks=retrieval.chunks, config=rerank_cfg)
+            )
+            reranked_chunks = []
+            by_id = {c.chunk_id: c for c in retrieval.chunks}
+            for i, rc in enumerate(reranked.chunks, start=1):
+                orig = by_id[rc.chunk_id]
+                reranked_chunks.append(
+                    orig.model_copy(update={"score": rc.reranked_score, "rank": i})
+                )
+            retrieval = retrieval.model_copy(update={"chunks": reranked_chunks})
+
         return QueryResponse(
             answer=generation.response,
             citations=generation.citations,
             retrieval=retrieval,
             generation=generation,
         )
-
