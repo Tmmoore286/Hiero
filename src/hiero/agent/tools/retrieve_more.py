@@ -49,5 +49,4 @@ class RetrieveMoreTool(ToolProtocol):
             result = result.model_copy(
                 update={"chunks": filtered, "total_candidates": len(filtered)}
             )
-        return result.model_dump()
-
+        return result.model_dump(mode="json")

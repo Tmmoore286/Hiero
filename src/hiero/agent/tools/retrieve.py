@@ -47,5 +47,4 @@ class RetrieveTool(ToolProtocol):
         config = RetrievalConfig(top_k=top_k, document_ids=parsed_ids)
         rq = RetrievalQuery(text=query_text, namespace=self.namespace, config=config)
         result = await self.retriever.retrieve(rq)
-        return result.model_dump()
-
+        return result.model_dump(mode="json")

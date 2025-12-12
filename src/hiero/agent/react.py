@@ -41,7 +41,7 @@ class ReActAgent(AgentProtocol):
                     for c in obs.result["chunks"]:
                         cid = c.get("chunk_id") if isinstance(c, dict) else None
                         if cid:
-                            scratch["seen_chunk_ids"].add(cid)
+                            scratch["seen_chunk_ids"].add(str(cid))
                 if retrieval_calls >= query.config.max_retrieval_calls:
                     scratch["retrieval_budget_exhausted"] = True
 
