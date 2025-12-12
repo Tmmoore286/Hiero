@@ -63,3 +63,10 @@ async def test_insert_and_dense_search():
     assert len(results) == 1
     assert results[0].content == "hello world"
 
+    sparse_results = await store.search_sparse(
+        namespace="default",
+        query_text="hello",
+        top_k=1,
+    )
+    assert len(sparse_results) == 1
+    assert sparse_results[0].content == "hello world"

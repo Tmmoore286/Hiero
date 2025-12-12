@@ -92,6 +92,47 @@ class PgVectorStore:
                 )
             return results
 
+    async def search_sparse(
+        self,
+        namespace: str,
+        query_text: str,
+        top_k: int = 10,
+        document_ids: list[UUID] | None = None,
+        metadata_filter: dict[str, Any] | None = None,
+    ) -> list[SearchResult]:
+        async with self.db.session() as session:
+            ts_query = sa.func.plainto_tsquery("english", query_text)
+            rank = sa.func.ts_rank(ChunkORM.content_tsvector, ts_query)
+            stmt = (
+                select(ChunkORM, rank.label("rank"))
+                .where(ChunkORM.namespace == namespace)
+                .where(ChunkORM.content_tsvector.op("@@")(ts_query))
+                .order_by(sa.desc(rank))
+                .limit(top_k)
+            )
+
+            if document_ids:
+                stmt = stmt.where(ChunkORM.document_id.in_(document_ids))
+
+            if metadata_filter:
+                for key, value in metadata_filter.items():
+                    stmt = stmt.where(ChunkORM.metadata_[key].astext == sa.cast(value, sa.Text))
+
+            rows = (await session.execute(stmt)).all()
+            results: list[SearchResult] = []
+            for chunk, r in rows:
+                results.append(
+                    SearchResult(
+                        chunk_id=chunk.id,
+                        document_id=chunk.document_id,
+                        content=chunk.content,
+                        score=float(r),
+                        metadata=chunk.metadata_ or {},
+                        section_title=chunk.section_title,
+                        chunk_index=chunk.chunk_index,
+                    )
+                )
+            return results
+
     async def dispose(self) -> None:
         await self.db.dispose()
-
