@@ -43,3 +43,6 @@ htmlcov/
 # Local database files (if using SQLite for testing)
 *.db
 *.sqlite3
+
+# Private files
+Updated_AI_ML_Portfolio_2025.md
