@@ -11,6 +11,8 @@ from .base import (
     ToolProtocol,
     ToolType,
 )
+from .llm import ChatMessage, ChatModel, OpenAIChatModel
+from .react import ReActAgent
 
 __all__ = [
     "AgentAction",
@@ -24,5 +26,8 @@ __all__ = [
     "SubQuery",
     "ToolProtocol",
     "ToolType",
+    "ChatMessage",
+    "ChatModel",
+    "OpenAIChatModel",
+    "ReActAgent",
 ]
-
