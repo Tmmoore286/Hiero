@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from uuid import UUID
+
 from hiero.generation import GenerationConfig, GenerationRequest, GeneratorProtocol, SourceContext
-from hiero.retrieval import RetrievedChunk
 
 from ..base import Citation, ToolProtocol, ToolType
 
@@ -33,18 +34,32 @@ class FinishTool(ToolProtocol):
 
     async def execute(self, **kwargs) -> Any:
         question: str = kwargs["question"]
-        chunks: list[RetrievedChunk] = kwargs["chunks"]
+        chunks = kwargs["chunks"]
 
-        context = [
-            SourceContext(
-                chunk_id=c.chunk_id,
-                document_id=c.document_id,
-                content=c.content,
-                metadata=c.metadata,
-                relevance_score=c.score,
+        context: list[SourceContext] = []
+        for c in chunks:
+            if isinstance(c, dict):
+                chunk_id = UUID(str(c["chunk_id"]))
+                document_id = UUID(str(c["document_id"]))
+                content = str(c.get("content", ""))
+                metadata = c.get("metadata") or {}
+                score = float(c.get("score", 0.0))
+            else:
+                chunk_id = c.chunk_id
+                document_id = c.document_id
+                content = c.content
+                metadata = c.metadata
+                score = c.score
+
+            context.append(
+                SourceContext(
+                    chunk_id=chunk_id,
+                    document_id=document_id,
+                    content=content,
+                    metadata=metadata,
+                    relevance_score=score,
+                )
             )
-            for c in chunks
-        ]
 
         gen_req = GenerationRequest(
             query=question,
@@ -75,4 +90,3 @@ class FinishTool(ToolProtocol):
             "grounding_score": gen.grounding_score,
             "tokens_used": gen.tokens_used,
         }
-

@@ -28,7 +28,7 @@ class ReActAgent(AgentProtocol):
         steps: list[AgentStep] = []
         tokens_used = 0
         retrieval_calls = 0
-        scratch: dict[str, Any] = {"retrieved": []}
+        scratch: dict[str, Any] = {"retrieved": [], "seen_chunk_ids": set()}
 
         for step_num in range(1, query.config.max_steps + 1):
             action, tokens = await self._next_action(query, query.config, steps, scratch)
@@ -37,6 +37,13 @@ class ReActAgent(AgentProtocol):
             obs = await self._execute_action(action, query, scratch)
             if action.tool in (ToolType.RETRIEVE, ToolType.RETRIEVE_MORE):
                 retrieval_calls += 1
+                if isinstance(obs.result, dict) and "chunks" in obs.result:
+                    for c in obs.result["chunks"]:
+                        cid = c.get("chunk_id") if isinstance(c, dict) else None
+                        if cid:
+                            scratch["seen_chunk_ids"].add(cid)
+                if retrieval_calls >= query.config.max_retrieval_calls:
+                    scratch["retrieval_budget_exhausted"] = True
 
             steps.append(AgentStep(step_number=step_num, action=action, observation=obs))
 
@@ -75,19 +82,18 @@ class ReActAgent(AgentProtocol):
     async def _execute_action(self, action: AgentAction, query: AgentQuery, scratch: dict[str, Any]) -> AgentObservation:
         start = perf_counter()
         try:
-            if action.tool == ToolType.FINISH:
-                return AgentObservation(
-                    action=action,
-                    result=action.tool_input,
-                    success=True,
-                    latency_ms=(perf_counter() - start) * 1000,
-                )
-
             tool = self.tools.get(action.tool)
             if tool is None:
                 raise ValueError(f"Tool not available: {action.tool}")
 
-            result = await tool.execute(**action.tool_input)
+            tool_input = dict(action.tool_input or {})
+            if action.tool in (ToolType.RETRIEVE_MORE,) and "exclude_chunk_ids" not in tool_input:
+                tool_input["exclude_chunk_ids"] = list(scratch.get("seen_chunk_ids", set()))
+            if action.tool == ToolType.FINISH:
+                tool_input.setdefault("question", query.question)
+                tool_input.setdefault("chunks", scratch.get("retrieved", []))
+
+            result = await tool.execute(**tool_input)
             if action.tool in (ToolType.RETRIEVE, ToolType.RETRIEVE_MORE):
                 scratch["retrieved"] = result.get("chunks", [])
             return AgentObservation(
@@ -112,7 +118,7 @@ class ReActAgent(AgentProtocol):
         steps: list[AgentStep],
         scratch: dict[str, Any],
     ) -> tuple[AgentAction, int]:
-        tool_list = ", ".join([t.value for t in config.enabled_tools if t in self.tools or t == ToolType.FINISH])
+        tool_list = ", ".join([t.value for t in config.enabled_tools if t in self.tools])
         last_obs = steps[-1].observation.result if steps else None
         retrieved = scratch.get("retrieved", [])
 
@@ -125,8 +131,11 @@ class ReActAgent(AgentProtocol):
             f"Available tools: {tool_list}\n"
             "Rules:\n"
             "- Use retrieve first unless you already have enough context.\n"
-            "- finish.tool_input MUST include: {\"answer\": \"...\", \"citations\": [], \"confidence\": 0-1}\n"
+            "- Use retrieve_more if you need more sources.\n"
+            "- Use finish when ready; finish.tool_input can be empty.\n"
         )
+        if scratch.get("retrieval_budget_exhausted"):
+            system += "\nRetrieval budget exhausted. You must finish with available sources.\n"
         user = {
             "question": query.question,
             "context": query.context,
@@ -145,6 +154,11 @@ class ReActAgent(AgentProtocol):
         if action.tool == ToolType.RETRIEVE_MORE and "query" not in action.tool_input:
             action.tool_input["query"] = query.question
             action.tool_input.setdefault("top_k", config.retrieval_top_k)
+        if scratch.get("retrieval_budget_exhausted") and action.tool in (
+            ToolType.RETRIEVE,
+            ToolType.RETRIEVE_MORE,
+        ):
+            action = AgentAction(tool=ToolType.FINISH, tool_input={}, thought="budget exhausted")
         return action, tokens
 
 
@@ -159,4 +173,3 @@ def _parse_action(text: str) -> AgentAction:
     except Exception:
         # Safe fallback: do a retrieval first.
         return AgentAction(tool=ToolType.RETRIEVE, tool_input={}, thought="fallback")
-

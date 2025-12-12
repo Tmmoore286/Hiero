@@ -8,6 +8,7 @@ if sys.version_info < (3, 11):
 from hiero.agent import AgentQuery, ReActAgent, ToolType
 from hiero.agent.llm import ChatMessage
 from hiero.agent.tools import CalculateTool
+from hiero.agent.base import ToolProtocol
 
 
 class _FakeLLM:
@@ -22,16 +23,32 @@ class _FakeLLM:
                 5,
             )
         return (
-            '{"tool":"finish","tool_input":{"answer":"done","citations":[],"confidence":0.9},"thought":"finish"}',
+            '{"tool":"finish","tool_input":{},"thought":"finish"}',
             5,
         )
 
 
+class _FakeFinishTool(ToolProtocol):
+    @property
+    def name(self) -> ToolType:
+        return ToolType.FINISH
+
+    @property
+    def description(self) -> str:
+        return "finish"
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object"}
+
+    async def execute(self, **kwargs):
+        return {"answer": "done", "citations": [], "confidence": 0.9}
+
+
 @pytest.mark.asyncio
 async def test_react_agent_finishes():
-    agent = ReActAgent(llm=_FakeLLM(), tools=[CalculateTool()])
+    agent = ReActAgent(llm=_FakeLLM(), tools=[CalculateTool(), _FakeFinishTool()])
     resp = await agent.run(AgentQuery(question="q"))
     assert resp.answer == "done"
     assert resp.total_steps == 2
     assert resp.steps[0].action.tool == ToolType.CALCULATE
-
