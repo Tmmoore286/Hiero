@@ -1,0 +1,13 @@
+{
+  "name": "example_dataset",
+  "version": "1.0",
+  "description": "Example dataset (fill relevant_doc_ids with real document UUID strings after ingestion).",
+  "queries": [
+    {
+      "query_id": "q1",
+      "question": "What is this document about?",
+      "relevant_doc_ids": []
+    }
+  ]
+}
+
