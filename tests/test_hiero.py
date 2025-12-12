@@ -8,6 +8,7 @@ if sys.version_info < (3, 11):
     pytest.skip("Hiero requires Python >= 3.11", allow_module_level=True)
 
 from hiero import Hiero
+from hiero.agent import AgentResponse
 from hiero.generation import GenerationResponse, InlineCitation
 from hiero.reranking import RerankResult, RerankedChunk, RerankingMethod
 from hiero.retrieval import RetrievedChunk, RetrievalConfig, RetrievalResult, RetrievalStrategy
@@ -160,3 +161,16 @@ async def test_hiero_query_applies_reranking():
     resp = await hiero.query("q", retrieval_config=RetrievalConfig(rerank_results=True, top_k=2))
     assert resp.retrieval.chunks[0].chunk_id == b_id
     assert resp.retrieval.chunks[0].score == pytest.approx(0.95)
+
+
+@pytest.mark.asyncio
+async def test_hiero_agent_query_calls_agent():
+    hiero = Hiero(database_url="postgresql+asyncpg://u:p@localhost:5432/db", openai_api_key="sk-test")
+    await hiero.initialize()
+
+    async def fake_run(query):
+        return AgentResponse(question=query.question, answer="agent", confidence=0.9)
+
+    hiero.agent = SimpleNamespace(run=fake_run)
+    resp = await hiero.agent_query("q")
+    assert resp.answer == "agent"

@@ -16,6 +16,8 @@ from hiero.ingestion import DocumentMetadata, IngestionRouter
 from hiero.reranking import LLMReranker, RerankRequest, RerankerConfig
 from hiero.retrieval import HybridRetriever, RetrievalConfig, RetrievalQuery, RetrievalResult
 from hiero.storage import ChunkORM, DocumentORM, PgVectorStore
+from hiero.agent import AgentQuery, AgentResponse, OpenAIChatModel, ReActAgent
+from hiero.agent.tools import CalculateTool, RetrieveTool
 
 
 class QueryResponse(BaseModel):
@@ -63,6 +65,17 @@ class Hiero:
         )
         self.reranker = LLMReranker(
             api_key=self.settings.openai_api_key.get_secret_value()
+        )
+
+        self.agent = ReActAgent(
+            llm=OpenAIChatModel(
+                api_key=self.settings.openai_api_key.get_secret_value(),
+                model="gpt-4o-mini",
+            ),
+            tools=[
+                RetrieveTool(self.retriever, namespace=self.namespace),
+                CalculateTool(),
+            ],
         )
 
         self._initialized = True
@@ -230,3 +243,8 @@ class Hiero:
             retrieval=retrieval,
             generation=generation,
         )
+
+    async def agent_query(self, question: str, namespace: str | None = None) -> AgentResponse:
+        await self.initialize()
+        q = AgentQuery(question=question, namespace=namespace or self.namespace)
+        return await self.agent.run(q)
